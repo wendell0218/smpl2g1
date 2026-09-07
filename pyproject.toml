@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smpl2g1"
+version = "0.1.0"
+description = "SMPL and SMPL-X motion retargeting for Unitree G1"
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+license = {file = "LICENSE"}
+dependencies = [
+  "mink==1.1.0",
+  "mujoco==3.6.0",
+  "numpy==2.2.6",
+  "daqp==0.8.1",
+  "qpsolvers==4.11.0",
+  "scipy==1.15.3",
+  "smplx==0.1.28",
+  "torch==2.10.0",
+]
+
+[project.scripts]
+smpl2g1 = "smpl2g1.cli:main"
+
+[tool.setuptools.package-data]
+smpl2g1 = ["assets/*.xml", "assets/meshes/*.STL", "configs/*.json"]
