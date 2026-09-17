@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import mink
 import mujoco
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
@@ -219,6 +220,86 @@ def ground_offset(model, qpos, valid, target_height):
     return float(target_height - np.quantile(bottoms, 0.01))
 
 
+# <modify>+Iterative grounding IK: presses ankles to ground at detected contact frames and
+# anchors ankle xy within each contact segment (PhySINK-style) to suppress skating.
+GROUND_CONTACT_BAND = (-0.02, 0.04)
+GROUND_ANKLE_Z_COST = 50.0
+GROUND_ANCHOR_XY_COST = 10.0
+GROUND_POSTURE_COST = 1.0
+GROUND_ROUNDS = 3
+GROUND_ITERATIONS = 10
+
+
+def ankle_bottoms(model, qpos, valid):
+    ankle_ids = {0: model.body("left_ankle_roll_link").id, 1: model.body("right_ankle_roll_link").id}
+    data = mujoco.MjData(model)
+    out = np.zeros((len(qpos), 2))
+    for t in np.flatnonzero(valid):
+        data.qpos[:] = qpos[t]
+        mujoco.mj_forward(model, data)
+        for foot, body_id in ankle_ids.items():
+            lows = []
+            for geom_id in range(model.ngeom):
+                if model.geom_bodyid[geom_id] != body_id or not (model.geom_contype[geom_id] or model.geom_conaffinity[geom_id]):
+                    continue
+                rotation = data.geom_xmat[geom_id].reshape(3, 3)
+                center_world = data.geom_xpos[geom_id] + rotation @ model.geom_aabb[geom_id, :3]
+                lows.append(center_world[2] - np.abs(rotation[2]) @ model.geom_aabb[geom_id, 3:])
+            out[t, foot] = min(lows)
+    return out
+
+
+def ground_ankles(model, qpos, valid, target_height):
+    configuration = mink.Configuration(model)
+    posture = mink.PostureTask(model, cost=GROUND_POSTURE_COST)
+    ankle_tasks = {
+        foot: mink.FrameTask(frame_name=name, frame_type="body",
+                             position_cost=[0.0, 0.0, 0.0], orientation_cost=0.0,
+                             lm_damping=1)
+        for foot, name in ((0, "left_ankle_roll_link"), (1, "right_ankle_roll_link"))
+    }
+    ankle_ids = {foot: model.body(name).id for foot, name in ((0, "left_ankle_roll_link"), (1, "right_ankle_roll_link"))}
+    tasks = [posture, *ankle_tasks.values()]
+    limits = [mink.ConfigurationLimit(model)]
+    out = qpos.copy()
+    dt = model.opt.timestep
+    contact_frames = 0
+    for _ in range(GROUND_ROUNDS):
+        bottom = ankle_bottoms(model, out, valid)
+        contact = (bottom >= GROUND_CONTACT_BAND[0]) & (bottom <= GROUND_CONTACT_BAND[1]) & valid[:, None]
+        contact_frames = int(contact.sum())
+        anchor = np.full((len(out), 2, 2), np.nan)
+        data = mujoco.MjData(model)
+        for t in np.flatnonzero(valid):
+            data.qpos[:] = out[t]
+            mujoco.mj_forward(model, data)
+            for foot, body_id in ankle_ids.items():
+                if contact[t, foot]:
+                    if t == 0 or not contact[t - 1, foot]:
+                        anchor[t, foot] = data.xpos[body_id][:2]
+                    else:
+                        anchor[t, foot] = anchor[t - 1, foot]
+        for t in range(len(out)):
+            configuration.update(out[t])
+            posture.set_target(out[t])
+            for foot, task in ankle_tasks.items():
+                pos = configuration.data.xpos[ankle_ids[foot]].copy()
+                quat = configuration.data.xquat[ankle_ids[foot]].copy()
+                if contact[t, foot]:
+                    pos[:2] = anchor[t, foot]
+                    pos[2] -= bottom[t, foot] - target_height
+                    task.set_position_cost([GROUND_ANCHOR_XY_COST, GROUND_ANCHOR_XY_COST, GROUND_ANKLE_Z_COST])
+                else:
+                    task.set_position_cost([0.0, 0.0, 0.0])
+                task.set_target(mink.SE3.from_rotation_and_translation(mink.SO3(quat), pos))
+            for _ in range(GROUND_ITERATIONS):
+                velocity = mink.solve_ik(configuration=configuration, tasks=tasks, dt=dt,
+                                         solver="daqp", damping=0.5, limits=limits)
+                configuration.integrate_inplace(velocity, dt)
+            out[t] = configuration.data.qpos[:36]
+    return out, contact_frames
+
+
 def retarget_motion(
     input_path,
     output_path,
@@ -227,6 +308,7 @@ def retarget_motion(
     up_axis="z",
     valid_path=None,
     ground_height=0.005,
+    ground_ik=True,
 ):
     if target_fps <= 8:
         raise ValueError("Target FPS must be greater than 8")
@@ -304,6 +386,11 @@ def retarget_motion(
     qpos = fill_invalid(qpos, valid)
     vertical_offset = ground_offset(model, qpos, valid, ground_height)
     qpos[:, 2] += vertical_offset
+    # <modify>+Optional grounding IK pass after the global offset; suppresses intra-sequence
+    # root-height drift that the constant offset cannot remove.
+    grounding_frames = 0
+    if ground_ik:
+        qpos, grounding_frames = ground_ankles(model, qpos, valid, ground_height)
     if not np.isfinite(qpos).all():
         raise RuntimeError("Retargeting produced non-finite values")
     output_path = Path(output_path)
@@ -322,6 +409,8 @@ def retarget_motion(
         "fps": float(target_fps),
         "up_axis": up_axis,
         "ground_offset_m": vertical_offset,
+        "ground_ik": ground_ik,
+        "grounding_contact_frames": grounding_frames,
         "runs": run_reports,
     }
     output_path.with_suffix(".json").write_text(json.dumps(report, indent=2) + "\n")
