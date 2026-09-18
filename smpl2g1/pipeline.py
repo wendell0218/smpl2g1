@@ -300,6 +300,24 @@ def ground_ankles(model, qpos, valid, target_height):
     return out, contact_frames
 
 
+# <modify>+Uniform low-pass applied right before the grounding IK pass (variant "f25" in the
+# grounding_v2 ablation). Pre-smoothing the pass-1 trajectory lets the grounding IK track a
+# cleaner signal and improves every reference/tracking metric on the 30-sequence subset.
+def pre_ground_lowpass(qpos, fps, cutoff=2.5):
+    output = qpos.copy()
+    if len(output) > 24:
+        lowpass = butter(4, cutoff, btype="low", fs=fps, output="sos")
+        output[:, :3] = sosfiltfilt(lowpass, output[:, :3], axis=0)
+        quaternion = output[:, 3:7].copy()
+        for index in range(1, len(quaternion)):
+            if np.dot(quaternion[index - 1], quaternion[index]) < 0:
+                quaternion[index] *= -1
+        quaternion = sosfiltfilt(lowpass, quaternion, axis=0)
+        output[:, 3:7] = quaternion / np.linalg.norm(quaternion, axis=1, keepdims=True)
+        output[:, 7:] = sosfiltfilt(lowpass, output[:, 7:], axis=0)
+    return output
+
+
 def retarget_motion(
     input_path,
     output_path,
@@ -390,6 +408,7 @@ def retarget_motion(
     # root-height drift that the constant offset cannot remove.
     grounding_frames = 0
     if ground_ik:
+        qpos = pre_ground_lowpass(qpos, target_fps)
         qpos, grounding_frames = ground_ankles(model, qpos, valid, ground_height)
     if not np.isfinite(qpos).all():
         raise RuntimeError("Retargeting produced non-finite values")
