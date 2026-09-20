@@ -1,8 +1,9 @@
-# <modify>+Validated UMR/smpl2g1 refinement using canonical G1 feasibility bounds.
 import json
 from pathlib import Path
 
 import numpy as np
+
+from .constraints import project_joint_feasibility
 
 
 def load_g1_motion(path, joint_names):
@@ -24,22 +25,6 @@ def load_g1_motion(path, joint_names):
     return qpos, fps, valid
 
 
-def project_joint_feasibility(qpos, limits, max_step, passes=4):
-    output = qpos.copy()
-    # <modify>+Use a small numerical margin inside the evaluator's 98% mechanical bounds.
-    lower = np.maximum(limits[:, 0], 0.975 * limits[:, 0])
-    upper = np.minimum(limits[:, 1], 0.975 * limits[:, 1])
-    output[:, 7:] = np.clip(output[:, 7:], lower, upper)
-    for _ in range(passes):
-        for t in range(1, len(output)):
-            output[t, 7:] = np.clip(output[t, 7:], output[t - 1, 7:] - max_step, output[t - 1, 7:] + max_step)
-        for t in range(len(output) - 2, -1, -1):
-            output[t, 7:] = np.clip(output[t, 7:], output[t + 1, 7:] - max_step, output[t + 1, 7:] + max_step)
-        output[:, 7:] = np.clip(output[:, 7:], lower, upper)
-    return output, lower, upper
-
-
-# <modify>+Suppress root-pose high frequencies with a local convex three-frame filter.
 def smooth_root_pose(qpos, strength=0.5):
     output = qpos.copy()
     if len(output) < 3:
@@ -58,7 +43,6 @@ def smooth_root_pose(qpos, strength=0.5):
     return output
 
 
-# <modify>+Blend the controller-friendly smpl2g1 waist and arms into the smooth UMR trajectory.
 def blend_upper_body(qpos, reference, strength=0.75):
     if qpos.shape != reference.shape:
         raise ValueError(f"Upper-body reference shape {reference.shape} does not match input {qpos.shape}")
@@ -69,8 +53,7 @@ def blend_upper_body(qpos, reference, strength=0.75):
     return output
 
 
-# <modify>+Accept an optional smpl2g1 trajectory as a waist-and-arm tracking prior.
-def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_strength=0.75):
+def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_strength=0.75, contact=False):
     package_root = Path(__file__).resolve().parent
     config = json.loads((package_root / "configs/g1_limits.json").read_text())
     joint_names = config["joint_names"]
@@ -78,7 +61,6 @@ def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_
     velocity_limits = np.asarray(config["velocity"], dtype=float)
     qpos, fps, valid = load_g1_motion(input_path, joint_names)
     original = qpos.copy()
-    # <modify>+Use the validated root-pose pass before enforcing hard G1 bounds.
     qpos = smooth_root_pose(qpos)
     reference_path = None
     if smpl_reference_path is not None:
@@ -89,6 +71,16 @@ def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_
         reference_path = str(Path(smpl_reference_path).resolve())
     max_step = 0.98 * velocity_limits / fps
     qpos, lower, upper = project_joint_feasibility(qpos, limits, max_step)
+    contact_report = None
+    if contact:
+        import torch
+
+        from .contact_refinement import refine_contact_motion
+        from .kinematics import G1Kinematics
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        kinematics = G1Kinematics().to(device).eval()
+        qpos, contact_report = refine_contact_motion(qpos, valid, kinematics, limits, velocity_limits, fps)
     before_position = int(((original[:, 7:] < lower) | (original[:, 7:] > upper)).any(axis=1).sum())
     before_velocity = int((np.abs(np.diff(original[:, 7:], axis=0)) > max_step).any(axis=1).sum())
     output_path = Path(output_path)
@@ -96,9 +88,9 @@ def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_
     np.savez_compressed(output_path, qpos_36=qpos.astype(np.float32), fps=np.float32(fps),
                         valid=valid, joint_names=np.asarray(joint_names), scene_required=np.bool_(False))
     report = {
-        # <modify>+Keep the existing pipeline identity when no upper-body prior is requested.
-        "pipeline": ("smpl2g1-rootpose-upperbody-feasibility-refinement-v3" if reference_path
-                     else "smpl2g1-rootpose-feasibility-refinement-v2"),
+        "pipeline": ("smpl2g1-hybrid-contact-v4" if contact else
+                     "smpl2g1-rootpose-upperbody-feasibility-refinement-v3" if reference_path else
+                     "smpl2g1-rootpose-feasibility-refinement-v2"),
         "input": str(Path(input_path).resolve()),
         "smpl_reference": reference_path,
         "frames": len(qpos), "fps": fps,
@@ -110,5 +102,7 @@ def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_
         "velocity_violation_intervals_after": int((np.abs(np.diff(qpos[:, 7:], axis=0)) > max_step + 1e-8).any(axis=1).sum()),
         "qpos_rms_change": float(np.sqrt(np.mean((qpos - original) ** 2))),
     }
+    if contact_report is not None:
+        report["contact_refinement"] = contact_report
     output_path.with_suffix(".json").write_text(json.dumps(report, indent=2) + "\n")
     return report

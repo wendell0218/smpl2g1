@@ -220,8 +220,6 @@ def ground_offset(model, qpos, valid, target_height):
     return float(target_height - np.quantile(bottoms, 0.01))
 
 
-# <modify>+Iterative grounding IK: presses ankles to ground at detected contact frames and
-# anchors ankle xy within each contact segment (PhySINK-style) to suppress skating.
 GROUND_CONTACT_BAND = (-0.02, 0.04)
 GROUND_ANKLE_Z_COST = 50.0
 GROUND_ANCHOR_XY_COST = 10.0
@@ -300,9 +298,6 @@ def ground_ankles(model, qpos, valid, target_height):
     return out, contact_frames
 
 
-# <modify>+Uniform low-pass applied right before the grounding IK pass (variant "f25" in the
-# grounding_v2 ablation). Pre-smoothing the pass-1 trajectory lets the grounding IK track a
-# cleaner signal and improves every reference/tracking metric on the 30-sequence subset.
 def pre_ground_lowpass(qpos, fps, cutoff=2.5):
     output = qpos.copy()
     if len(output) > 24:
@@ -404,8 +399,6 @@ def retarget_motion(
     qpos = fill_invalid(qpos, valid)
     vertical_offset = ground_offset(model, qpos, valid, ground_height)
     qpos[:, 2] += vertical_offset
-    # <modify>+Optional grounding IK pass after the global offset; suppresses intra-sequence
-    # root-height drift that the constant offset cannot remove.
     grounding_frames = 0
     if ground_ik:
         qpos = pre_ground_lowpass(qpos, target_fps)

@@ -1,26 +1,10 @@
-# <modify>+Jointly refine root translation and both legs with frozen heel/toe contacts.
 import numpy as np
 import torch
 from scipy.signal import butter, sosfiltfilt
 
+from .constraints import project_joint_feasibility
+
 REGION_INDICES = ((0, 1), (2, 3), (4, 5), (6, 7))
-
-
-# <modify>+Keep the experiment module independently loadable without importing the IK pipeline.
-def _project_joint_feasibility(qpos, limits, max_step, passes=4):
-    output = qpos.copy()
-    lower = np.maximum(limits[:, 0], 0.975 * limits[:, 0])
-    upper = np.minimum(limits[:, 1], 0.975 * limits[:, 1])
-    output[:, 7:] = np.clip(output[:, 7:], lower, upper)
-    for _ in range(passes):
-        for frame in range(1, len(output)):
-            output[frame, 7:] = np.clip(output[frame, 7:], output[frame - 1, 7:] - max_step,
-                                        output[frame - 1, 7:] + max_step)
-        for frame in range(len(output) - 2, -1, -1):
-            output[frame, 7:] = np.clip(output[frame, 7:], output[frame + 1, 7:] - max_step,
-                                        output[frame + 1, 7:] + max_step)
-        output[:, 7:] = np.clip(output[:, 7:], lower, upper)
-    return output
 
 
 def frozen_contact_mask(sole, radii, valid):
@@ -44,6 +28,8 @@ def frozen_contact_mask(sole, radii, valid):
 def refine_contact_motion(qpos, valid, kinematics, limits, velocity_limits, fps=30.0, steps=300):
     if qpos.ndim != 2 or qpos.shape[1] != 36 or valid.shape != (len(qpos),):
         raise ValueError("Contact refinement expects qpos[T,36] and valid[T]")
+    if len(qpos) < 16:
+        raise ValueError("Contact refinement requires at least 16 frames")
     if abs(float(fps) - 30.0) > 1e-4 or not np.isfinite(qpos).all():
         raise ValueError("Contact refinement requires finite 30 FPS motion")
 
@@ -62,12 +48,26 @@ def refine_contact_motion(qpos, valid, kinematics, limits, velocity_limits, fps=
     root_rotation = root_rotation.clone()
     base_noise = base_noise.clone()
 
+    if not contact.any():
+        output, _, _ = project_joint_feasibility(
+            np.asarray(qpos, dtype=np.float64), limits, 0.98 * velocity_limits / fps
+        )
+        report = {
+            "best_step": 0,
+            "initial_or_improved": "initial",
+            "best_objective": None,
+            "active_contact_region_frames": 0,
+            "qpos_rms_change": float(np.sqrt(np.mean((output - qpos) ** 2))),
+            "root_correction_filter_hz": 8.0,
+            "leg_correction_filter_hz": 12.0,
+        }
+        return output, report
+
     lower = torch.as_tensor(0.975 * limits[:12, 0], dtype=torch.float32, device=device)
     upper = torch.as_tensor(0.975 * limits[:12, 1], dtype=torch.float32, device=device)
     vmax = torch.as_tensor(velocity_limits[:12], dtype=torch.float32, device=device)
     theta0 = torch.cat([base[:, :3], base[:, 7:19]], 1)
     theta = theta0.detach().clone().requires_grad_(True)
-    # <modify>+Use the explicit Adam update to avoid per-process torch.compile cold-start imports.
     adam_mean = torch.zeros_like(theta)
     adam_square = torch.zeros_like(theta)
     best_loss = float("inf")
@@ -145,7 +145,7 @@ def refine_contact_motion(qpos, valid, kinematics, limits, velocity_limits, fps=
     output = original.copy()
     output[:, :3] += sosfiltfilt(root_filter, correction[:, :3], axis=0)
     output[:, 7:19] += sosfiltfilt(leg_filter, correction[:, 3:], axis=0)
-    output = _project_joint_feasibility(output, limits, 0.98 * velocity_limits / fps)
+    output, _, _ = project_joint_feasibility(output, limits, 0.98 * velocity_limits / fps)
     report = {"best_step": best_step, "initial_or_improved": "initial" if best_step == 0 else "improved",
               "best_objective": best_loss, "active_contact_region_frames": int(contact.sum()),
               "qpos_rms_change": float(np.sqrt(np.mean((output - original) ** 2))),

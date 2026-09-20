@@ -1,6 +1,6 @@
 # smpl2g1
 
-Retarget SMPL or SMPL-X motion to Unitree G1 29-DoF motion.
+Retarget SMPL or SMPL-X motion to Unitree G1 29-DoF motion and refine existing G1 trajectories for contact quality and controller tracking.
 
 ## Installation
 
@@ -9,7 +9,7 @@ conda env create -f environment.yml
 conda activate smpl2g1
 ```
 
-Download the SMPL-X body models and place them in `models/smplx/`:
+Download the SMPL-X body models into `models/smplx/`:
 
 ```text
 models/smplx/SMPLX_NEUTRAL.npz
@@ -17,7 +17,7 @@ models/smplx/SMPLX_MALE.npz
 models/smplx/SMPLX_FEMALE.npz
 ```
 
-## Quick start
+## Retargeting
 
 Edit the paths in `retarget.sh`, then run:
 
@@ -25,35 +25,53 @@ Edit the paths in `retarget.sh`, then run:
 source retarget.sh
 ```
 
-The input is an SMPL-style `.npz` file containing `poses`, `trans`, `betas`, and a frame-rate field. The output contains `qpos_36`, `fps`, `valid`, and `joint_names`.
+The input `.npz` contains `poses`, `trans`, `betas`, and a frame-rate field. The output contains `qpos_36`, `fps`, `valid`, and `joint_names`.
 
-<!-- <modify>+Document the optional UMR/smpl2g1 hybrid refinement. -->
 ## Hybrid refinement
 
-`refine.py` accepts an existing 30 FPS G1 trajectory, including UMR output. The validated default applies a local convex three-frame filter to the root pose, then projects joint positions and adjacent-frame velocities into the canonical G1 safety bounds:
-
-```bash
-python refine.py \
-  --input umr_g1.npz \
-  --output outputs/hybrid_g1.npz
-```
-
-Edit the paths in `refine.sh` and run it with `source refine.sh` for the repository's configured environment.
-
-The complete 105-sequence validation is recorded in `experiments/hybrid_rootpose_full105.json`. Relative to the feasibility-only hybrid, root smoothing reduces mean jerk from 103.24 to 73.33 m/s³ while retaining 100% Joint Feasibility; all 105 SONIC rollouts were rerun.
-
-<!-- <modify>+Document the optional controller-trackable upper-body prior. -->
-When a time-aligned smpl2g1 trajectory is available, its waist and arm joints can be used as a soft tracking prior while the UMR root and legs remain unchanged:
+The final refinement combines root smoothing, a time-aligned smpl2g1 upper-body prior, G1 position and velocity projection, and contact-aware root-and-leg optimization:
 
 ```bash
 python refine.py \
   --input umr_g1.npz \
   --smpl-reference smpl2g1_g1.npz \
   --upper-body-strength 0.75 \
-  --output outputs/hybrid_upper_g1.npz
+  --contact \
+  --output outputs/hybrid_contact_g1.npz
 ```
 
-The fixed strength was selected on the motion-stratified 12-sequence pilot rather than per sequence. The feasibility projection is applied after fusion.
+The contact stage uses the differentiable G1 kinematics and sole geometry included in this repository. It does not require OMG.
 
-<!-- <modify>+Record the complete-cohort outcome of the fixed upper-body prior. -->
-The complete 105-sequence result is archived in `experiments/hybrid_upper_full105.json`. Relative to the root-pose hybrid, Tracking Score improves from 0.2731 to 0.3255, MPJPE from 32.35 to 29.05 mm, jerk from 73.33 to 69.43 m/s³, and MSNR from 18.72 to 21.78 dB. Joint Feasibility remains 100%, and all 105 SONIC rollouts complete without a fall.
+The complete 105-sequence experiment can be launched with:
+
+```bash
+source experiments/run_full105.sh
+```
+
+Its aggregate reference and SONIC measurements are stored in `experiments/hybrid_contact_full105.json`.
+
+## Structure
+
+```text
+smpl2g1/
+  assets/                 G1 MuJoCo model and meshes
+  configs/                retargeting, limits, and kinematics data
+  cli.py                  SMPL/SMPL-X retargeting command
+  contact_refinement.py   contact-aware trajectory optimization
+  constraints.py          joint position and velocity projection
+  kinematics.py           differentiable G1 forward kinematics
+  motion.py               human-motion loading and preprocessing
+  pipeline.py             retargeting pipeline
+  refine_cli.py           hybrid refinement command
+  refinement.py           smoothing and upper-body fusion
+  solver.py               inverse-kinematics solver
+experiments/
+  run_full105.py          complete-cohort experiment
+  run_full105.sh          four-GPU launcher
+  hybrid_contact_full105.json
+tests/
+  test_kinematics.py
+  test_pipeline.py
+retarget.py / retarget.sh
+refine.py / refine.sh
+```
