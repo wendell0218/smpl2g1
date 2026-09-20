@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from smpl2g1.pipeline import adaptive_wrist_filter, valid_runs
-from smpl2g1.refinement import project_joint_feasibility, smooth_root_pose
+from smpl2g1.refinement import blend_upper_body, project_joint_feasibility, smooth_root_pose
 
 
 class PipelineTest(unittest.TestCase):
@@ -39,6 +39,14 @@ class PipelineTest(unittest.TestCase):
         self.assertLess(np.abs(np.diff(output[:, 0], n=3)).mean(), np.abs(np.diff(qpos[:, 0], n=3)).mean())
         np.testing.assert_array_equal(output[:, 7:], qpos[:, 7:])
         np.testing.assert_allclose(np.linalg.norm(output[:, 3:7], axis=1), 1.0, atol=1e-12)
+
+    # <modify>+Verify that tracking-prior fusion cannot change the root or either leg.
+    def test_upper_body_blend(self):
+        qpos = np.zeros((5, 36))
+        reference = np.ones((5, 36))
+        output = blend_upper_body(qpos, reference, strength=0.75)
+        np.testing.assert_array_equal(output[:, :19], qpos[:, :19])
+        np.testing.assert_allclose(output[:, 19:], 0.75)
 
 
 if __name__ == "__main__":
