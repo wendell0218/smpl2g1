@@ -1,0 +1,174 @@
+{
+  "schema": "smpl2g1.hybrid_contact.full105.v4",
+  "cohort_count": 105,
+  "aggregation": "complete-sequence metric first, arithmetic macro-average",
+  "reference_fps": 30.0,
+  "sonic_fps": 50.0,
+  "methods": {
+    "smpl2g1": "smpl2g1-0.1.0 frozen full-cohort baseline",
+    "UMR": "UMR defaults with bidirectional warm start and LQR",
+    "hybrid_feasible": "UMR trajectory projected to 97.5% canonical G1 position bounds and 98% adjacent-frame velocity bounds",
+    "hybrid_rootpose": "UMR trajectory, local root-pose FIR weights [0.125, 0.75, 0.125], then 97.5% canonical G1 position and 98% adjacent-frame velocity bounds",
+    "hybrid_upper75": "UMR root and legs with root FIR weights [0.125, 0.75, 0.125], a fixed 0.75 smpl2g1 waist-and-arm prior, then 97.5% canonical G1 position and 98% adjacent-frame velocity bounds",
+    "hybrid_contact": "hybrid_upper75 followed by a fixed 300-step frozen-contact root-and-leg refinement, 8 Hz root and 12 Hz leg correction filters, then 97.5% canonical G1 position and 98% adjacent-frame velocity bounds"
+  },
+  "metrics": [
+    {
+      "key": "Jerk_m_s3",
+      "direction": "lower",
+      "smpl2g1": 528.5725985209652,
+      "UMR": 102.89214882384643,
+      "hybrid_feasible": 103.24192558009133,
+      "hybrid_rootpose": 73.33378970343935,
+      "hybrid_upper75": 69.4347603301972,
+      "hybrid_contact": 71.68740283649741
+    },
+    {
+      "key": "MSNR_dB",
+      "direction": "higher",
+      "smpl2g1": 20.341637870288984,
+      "UMR": 18.77167471742238,
+      "hybrid_feasible": 18.715493579688896,
+      "hybrid_rootpose": 18.715493579688896,
+      "hybrid_upper75": 21.776018358773953,
+      "hybrid_contact": 23.993933261510236
+    },
+    {
+      "key": "C_Slide_m_s",
+      "direction": "lower",
+      "smpl2g1": 0.12184859170680833,
+      "UMR": 0.28255419598688325,
+      "hybrid_feasible": 0.28256508755655574,
+      "hybrid_rootpose": 0.2710008243310225,
+      "hybrid_upper75": 0.2710008290635375,
+      "hybrid_contact": 0.20286704035368852
+    },
+    {
+      "key": "PFC",
+      "direction": "lower",
+      "smpl2g1": 3.5970727374301736,
+      "UMR": 0.2831944102131255,
+      "hybrid_feasible": 0.2833012920668661,
+      "hybrid_rootpose": 0.25301352328848786,
+      "hybrid_upper75": 0.25301309654416376,
+      "hybrid_contact": 0.06783853569884996
+    },
+    {
+      "key": "Non_Skating_pct",
+      "direction": "higher",
+      "smpl2g1": 74.57082028206639,
+      "UMR": 49.62327980186684,
+      "hybrid_feasible": 49.619317390736995,
+      "hybrid_rootpose": 53.31414827235913,
+      "hybrid_upper75": 53.31414827235913,
+      "hybrid_contact": 75.55891672189985
+    },
+    {
+      "key": "Non_Floating_pct",
+      "direction": "higher",
+      "smpl2g1": 70.78244192360266,
+      "UMR": 69.65905684193174,
+      "hybrid_feasible": 69.65829002957072,
+      "hybrid_rootpose": 69.69714735277132,
+      "hybrid_upper75": 69.69714735277132,
+      "hybrid_contact": 90.0503233738726
+    },
+    {
+      "key": "Non_Penetration_pct",
+      "direction": "higher",
+      "smpl2g1": 99.54317106989167,
+      "UMR": 100.0,
+      "hybrid_feasible": 100.0,
+      "hybrid_rootpose": 100.0,
+      "hybrid_upper75": 100.0,
+      "hybrid_contact": 100.0
+    },
+    {
+      "key": "Joint_Feasibility_pct",
+      "direction": "higher",
+      "smpl2g1": 91.44903041168429,
+      "UMR": 73.91621278041124,
+      "hybrid_feasible": 100.0,
+      "hybrid_rootpose": 100.0,
+      "hybrid_upper75": 100.0,
+      "hybrid_contact": 100.0
+    },
+    {
+      "key": "MPJPE_mm",
+      "direction": "lower",
+      "smpl2g1": 30.716080404818058,
+      "UMR": 32.56923475613197,
+      "hybrid_feasible": 32.431817507105215,
+      "hybrid_rootpose": 32.35070111141319,
+      "hybrid_upper75": 29.04926895917881,
+      "hybrid_contact": 28.500844218901225
+    },
+    {
+      "key": "gMPJPE_mm",
+      "direction": "lower",
+      "smpl2g1": 190.33367756221975,
+      "UMR": 152.99569519147985,
+      "hybrid_feasible": 153.31328674441292,
+      "hybrid_rootpose": 156.71051398274443,
+      "hybrid_upper75": 166.5724858996414,
+      "hybrid_contact": 170.71438348364262
+    },
+    {
+      "key": "E_vel_mm_frame",
+      "direction": "lower",
+      "smpl2g1": 0.3872409843218823,
+      "UMR": 0.2105125060604353,
+      "hybrid_feasible": 0.21053488965013195,
+      "hybrid_rootpose": 0.207479520606631,
+      "hybrid_upper75": 0.2185903208529843,
+      "hybrid_contact": 0.21357542641150454
+    },
+    {
+      "key": "E_acc_mm_frame2",
+      "direction": "lower",
+      "smpl2g1": 11.646002475615768,
+      "UMR": 3.537065556710808,
+      "hybrid_feasible": 3.5465878685326535,
+      "hybrid_rootpose": 3.1686186335892197,
+      "hybrid_upper75": 3.2036232403784415,
+      "hybrid_contact": 3.1541984551170446
+    },
+    {
+      "key": "TrackingScore",
+      "direction": "higher",
+      "smpl2g1": 0.3066188761542733,
+      "UMR": 0.2714759667143823,
+      "hybrid_feasible": 0.27302435204768905,
+      "hybrid_rootpose": 0.2730707842796542,
+      "hybrid_upper75": 0.32549116795292504,
+      "hybrid_contact": 0.32539651521721114
+    },
+    {
+      "key": "Fall_pct",
+      "direction": "lower",
+      "smpl2g1": 0.0,
+      "UMR": 0.0,
+      "hybrid_feasible": 0.0,
+      "hybrid_rootpose": 0.0,
+      "hybrid_upper75": 0.0,
+      "hybrid_contact": 0.0
+    },
+    {
+      "key": "JLimit_pct",
+      "direction": "lower",
+      "smpl2g1": 12.380952380952381,
+      "UMR": 7.619047619047619,
+      "hybrid_feasible": 8.571428571428571,
+      "hybrid_rootpose": 7.619047619047619,
+      "hybrid_upper75": 6.666666666666667,
+      "hybrid_contact": 5.714285714285714
+    }
+  ],
+  "validation_notes": {
+    "selection": "The fixed contact weight (12) and 8/12 Hz correction filters passed a predeclared 12-sequence stratified pilot gate; no per-sequence hyperparameter selection was used.",
+    "reference": "All 105 complete sequences were rerun. Jerk is 71.6874 m/s^3, MSNR is 23.9939 dB, and Joint Feasibility remains 100%.",
+    "contact": "Frozen initial G1 heel/toe contacts supervise the root-and-leg refinement. C-Slide is 0.2029 m/s, PFC is 0.0678, Non-Skating is 75.5589%, and Non-Floating is 90.0503%.",
+    "safeguard": "The minimum-objective checkpoint is retained per sequence; four of 105 sequences kept the initial checkpoint because optimization did not improve the joint objective.",
+    "sonic": "All 105 SONIC rollouts completed. MPJPE is 28.5008 mm, Tracking Score is 0.3254, Fall is 0%, and J-Limit is 5.7143%."
+  }
+}
