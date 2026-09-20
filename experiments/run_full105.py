@@ -20,5 +20,5 @@ assert len(paths) == 105
 for index, path in enumerate(paths[args.shard_index::args.num_shards], 1):
     reference = reference_root / path.name
     output = output_root / path.name
-    report = refine_motion(path, output, reference, upper_body_strength=0.75, contact=True)
+    report = refine_motion(path, output, reference)
     print(json.dumps({"shard": args.shard_index, "done": index, "sample": path.stem, **report}), flush=True)

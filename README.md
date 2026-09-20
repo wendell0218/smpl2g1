@@ -29,6 +29,8 @@ The input is an SMPL or SMPL-X `.npz` motion file. The output is a G1 `.npz` mot
 
 ## Refine G1 motion
 
+Use the UMR G1 motion as the input and the retargeted smpl2g1 motion as the reference.
+
 Set the input, reference, and output paths in `refine.sh`, then run:
 
 ```bash
@@ -41,7 +43,5 @@ You can also run it directly:
 python refine.py \
   --input input_g1.npz \
   --smpl-reference reference_g1.npz \
-  --upper-body-strength 0.75 \
-  --contact \
   --output output_g1.npz
 ```

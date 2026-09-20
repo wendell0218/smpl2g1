@@ -53,7 +53,7 @@ def blend_upper_body(qpos, reference, strength=0.75):
     return output
 
 
-def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_strength=0.75, contact=False):
+def refine_motion(input_path, output_path, smpl_reference_path):
     package_root = Path(__file__).resolve().parent
     config = json.loads((package_root / "configs/g1_limits.json").read_text())
     joint_names = config["joint_names"]
@@ -62,25 +62,21 @@ def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_
     qpos, fps, valid = load_g1_motion(input_path, joint_names)
     original = qpos.copy()
     qpos = smooth_root_pose(qpos)
-    reference_path = None
-    if smpl_reference_path is not None:
-        reference, reference_fps, reference_valid = load_g1_motion(smpl_reference_path, joint_names)
-        if abs(reference_fps - fps) > 1e-6 or not np.array_equal(reference_valid, valid):
-            raise ValueError("Upper-body reference timeline does not match the input")
-        qpos = blend_upper_body(qpos, reference, upper_body_strength)
-        reference_path = str(Path(smpl_reference_path).resolve())
+    reference, reference_fps, reference_valid = load_g1_motion(smpl_reference_path, joint_names)
+    if abs(reference_fps - fps) > 1e-6 or not np.array_equal(reference_valid, valid):
+        raise ValueError("Upper-body reference timeline does not match the input")
+    qpos = blend_upper_body(qpos, reference, 0.75)
+    reference_path = str(Path(smpl_reference_path).resolve())
     max_step = 0.98 * velocity_limits / fps
     qpos, lower, upper = project_joint_feasibility(qpos, limits, max_step)
-    contact_report = None
-    if contact:
-        import torch
+    import torch
 
-        from .contact_refinement import refine_contact_motion
-        from .kinematics import G1Kinematics
+    from .contact_refinement import refine_contact_motion
+    from .kinematics import G1Kinematics
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        kinematics = G1Kinematics().to(device).eval()
-        qpos, contact_report = refine_contact_motion(qpos, valid, kinematics, limits, velocity_limits, fps)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    kinematics = G1Kinematics().to(device).eval()
+    qpos, contact_report = refine_contact_motion(qpos, valid, kinematics, limits, velocity_limits, fps)
     before_position = int(((original[:, 7:] < lower) | (original[:, 7:] > upper)).any(axis=1).sum())
     before_velocity = int((np.abs(np.diff(original[:, 7:], axis=0)) > max_step).any(axis=1).sum())
     output_path = Path(output_path)
@@ -88,13 +84,11 @@ def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_
     np.savez_compressed(output_path, qpos_36=qpos.astype(np.float32), fps=np.float32(fps),
                         valid=valid, joint_names=np.asarray(joint_names), scene_required=np.bool_(False))
     report = {
-        "pipeline": ("smpl2g1-hybrid-contact-v4" if contact else
-                     "smpl2g1-rootpose-upperbody-feasibility-refinement-v3" if reference_path else
-                     "smpl2g1-rootpose-feasibility-refinement-v2"),
+        "pipeline": "smpl2g1-hybrid-contact-v4",
         "input": str(Path(input_path).resolve()),
         "smpl_reference": reference_path,
         "frames": len(qpos), "fps": fps,
-        "root_smoothing_strength": 0.5, "upper_body_strength": upper_body_strength if reference_path else 0.0,
+        "root_smoothing_strength": 0.5, "upper_body_strength": 0.75,
         "joint_limit_scale": 0.975, "velocity_limit_fraction": 0.98,
         "position_violation_frames_before": before_position,
         "velocity_violation_intervals_before": before_velocity,
@@ -102,7 +96,6 @@ def refine_motion(input_path, output_path, smpl_reference_path=None, upper_body_
         "velocity_violation_intervals_after": int((np.abs(np.diff(qpos[:, 7:], axis=0)) > max_step + 1e-8).any(axis=1).sum()),
         "qpos_rms_change": float(np.sqrt(np.mean((qpos - original) ** 2))),
     }
-    if contact_report is not None:
-        report["contact_refinement"] = contact_report
+    report["contact_refinement"] = contact_report
     output_path.with_suffix(".json").write_text(json.dumps(report, indent=2) + "\n")
     return report
