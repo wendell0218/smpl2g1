@@ -23,6 +23,7 @@ dependencies = [
 [project.scripts]
 smpl2g1 = "smpl2g1.cli:main"
 smpl2g1-refine = "smpl2g1.refine_cli:main"
+smpl2g1-generate = "smpl2g1.generate_cli:main"
 
 [tool.setuptools.package-data]
 smpl2g1 = ["assets/*.xml", "assets/meshes/*.STL", "configs/*.json"]
