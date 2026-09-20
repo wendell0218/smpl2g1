@@ -26,4 +26,14 @@ Set the input, output, model, UMR environment, and UMR slots paths in `generate.
 source generate.sh
 ```
 
+Any setting can also be overridden when sourcing the script. Omitted values keep the defaults in `generate.sh`:
+
+```bash
+source generate.sh \
+  --input motion.npz \
+  --output outputs/final_g1.npz \
+  --body-model-dir models \
+  --gpu 0
+```
+
 The input is an SMPL or SMPL-X `.npz` motion file. The output is the final G1 `.npz` motion file.
